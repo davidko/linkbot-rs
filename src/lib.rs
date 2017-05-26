@@ -3,14 +3,18 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::sync::{Mutex, Condvar};
 
 
-#[repr(C)]
 pub struct Linkbot {
+    inner: Box<Inner>
+}
+
+#[repr(C)]
+pub struct Inner {
     _inner: *mut libc::c_void,
     _movewait: (Mutex<i32>, Condvar),
     //_movewait_channel: Sender<i32, i32>,
 }
 
-extern "C" fn linkbot_joint_event_callback(joint_no: i32, event: i32, timestamp: i32, linkbot: *mut Linkbot)
+extern "C" fn linkbot_joint_event_callback(joint_no: i32, event: i32, timestamp: i32, linkbot: *mut Inner)
 {
     unsafe {
         let &(ref lock, ref cond) = &((*linkbot)._movewait);
@@ -34,13 +38,14 @@ impl Linkbot {
                 None
             } else {
                 // Enable joint events
-                let linkbot = Linkbot{_inner: inner,
+                let linkbot = Inner{_inner: inner,
                                       _movewait: (Mutex::new(0), Condvar::new()),
                 };
                 let mut linkbot_boxed = Box::new(linkbot);
                 linkbotSetJointEventCallback(linkbot_boxed._inner, 
                                              linkbot_joint_event_callback,
                                              &mut *linkbot_boxed);
+                let linkbot = Linkbot{ inner: linkbot_boxed };
 
                 //Some(Linkbot{ _inner: inner })
                 None
@@ -49,8 +54,9 @@ impl Linkbot {
     }
 
     pub fn move_motors(&mut self, mask: u32, j1: f64, j2: f64, j3: f64) {
+        let &(ref lock, _) = &(self.inner._movewait);
         unsafe{
-            linkbotMove(self._inner, mask, j1, j2, j3);
+            linkbotMove(self.inner._inner, mask, j1, j2, j3);
         }
     }
 }
@@ -64,8 +70,8 @@ extern {
                    j2: libc::c_double,
                    j3: libc::c_double) -> libc::c_int;
     fn linkbotSetJointEventCallback(linkbot_inner: *mut libc::c_void,
-                                    cb: extern fn(i32, i32, i32, *mut Linkbot),
-                                    userdata: *mut Linkbot);
+                                    cb: extern fn(i32, i32, i32, *mut Inner),
+                                    userdata: *mut Inner);
 }
 
 #[cfg(test)]

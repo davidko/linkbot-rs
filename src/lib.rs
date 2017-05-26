@@ -10,7 +10,7 @@ pub struct Linkbot {
 #[repr(C)]
 pub struct Inner {
     _inner: *mut libc::c_void,
-    _movewait: (Mutex<i32>, Condvar),
+    _movewait: (Mutex<u8>, Condvar),
     //_movewait_channel: Sender<i32, i32>,
 }
 
@@ -53,10 +53,22 @@ impl Linkbot {
         }
     }
 
-    pub fn move_motors(&mut self, mask: u32, j1: f64, j2: f64, j3: f64) {
+    pub fn move_motors(&mut self, mask: u8, j1: f64, j2: f64, j3: f64) {
         let &(ref lock, _) = &(self.inner._movewait);
+        {
+            let mut _mask = lock.lock().unwrap();
+            *_mask |= mask;
+        }
         unsafe{
-            linkbotMove(self.inner._inner, mask, j1, j2, j3);
+            linkbotMove(self.inner._inner, mask as u32, j1, j2, j3);
+        }
+    }
+
+    pub fn move_wait(&mut self, mask: u8) {
+        let &(ref lock, ref cond) = &(self.inner._movewait);
+        let mut _mask = lock.lock().unwrap();
+        while (mask & *_mask) != 0 {
+            _mask = cond.wait(_mask).unwrap();
         }
     }
 }

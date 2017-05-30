@@ -10,4 +10,4 @@ repository = "https://github.com/davidko/linkbot-rs"
 license = "GPL-3.0"
 
 [dependencies]
-libc = "*"
+libc = "0.2.23"

@@ -3,5 +3,11 @@ name = "linkbot"
 version = "0.0.1"
 authors = ["David Ko <david@barobo.com>"]
 
+description = "Rust API for controlling Barobo Linkbots."
+
+homepage = "https://barobo.com"
+repository = "https://github.com/davidko/linkbot-rs"
+license = "GPL"
+
 [dependencies]
 libc = "*"

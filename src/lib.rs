@@ -28,10 +28,12 @@
 //!
 //! use linkbot::Linkbot;
 //!
-//! let mut l = Linkbot::new("ZRG6").unwrap();
-//! l.move_motors(7, 90.0, 90.0, 90.0);
-//! l.move_wait(7);
-//! l.move_motors(7, -180.0, -180.0, -180.0);
+//! fn main() {
+//!     let mut l = Linkbot::new("ZRG6").unwrap();
+//!     l.move_motors(7, 90.0, 90.0, 90.0);
+//!     l.move_wait(7);
+//!     l.move_motors(7, -180.0, -180.0, -180.0);
+//! }
 //! ```
 
 extern crate libc;
@@ -44,12 +46,17 @@ pub struct Linkbot {
 }
 
 /// Linkbot button
+///
+/// Used in Linkbot button callback functions. See `set_button_handler`.
 pub enum Button {
     Power,
     A,
     B
 }
 
+/// Linkbot button state
+///
+/// Used in Linkbot button callback functions. See `set_button_handler`.
 pub enum ButtonState {
     Up,
     Down
@@ -102,7 +109,9 @@ extern "C" fn linkbot_button_event_callback(button: i32, state: i32, timestamp: 
 }
 
 impl Linkbot {
-    /// Connect to a Linkbot. 
+    /// Try to connect to a Linkbot. 
+    ///
+    /// If there is an error, `None` is returned and an error message is printed to stderr.
     pub fn new(serial_id: &str) -> Option<Linkbot> {
         let _serial_id = serial_id.to_string();
         let _serial_id = _serial_id + "\0";
@@ -180,6 +189,23 @@ impl Linkbot {
     }
 
     /// Set a callback for when a Linkbot button is pressed
+    ///
+    /// The callback will be called whenever a button is depressed or released.
+    /// The third argument of the callback function is a timestamp indicating the number of
+    /// milleseconds the robot has been powered on.
+    ///
+    /// # Examples
+    /// ```
+    /// extern crate linkbot;
+    /// use linkbot::Linkbot;
+    ///
+    /// fn main() {
+    ///     let mut l = Linkbot::new("ZRG6").unwrap();
+    ///     l.set_button_handler( |button, state, timestamp| {
+    ///         // Do something. This closure will be called when any button is depressed or
+    ///         // released.
+    ///     });
+    /// }
     pub fn set_button_handler<F>(&mut self, callback: F)
         where F: FnMut(Button, ButtonState, u32) + 'static
     {
@@ -222,8 +248,12 @@ mod tests {
     #[test]
     fn it_works() {
         let mut l = Linkbot::new("ZRG6").unwrap();
+        l.set_button_handler( |button, state, timestamp| {
+            println!("Button press!");
+        });
         l.move_motors(7, 90.0, 90.0, 90.0);
         l.move_wait(7);
         l.move_motors(7, -90.0, -90.0, -90.0);
+        l.move_wait(7);
     }
 }

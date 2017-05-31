@@ -144,6 +144,25 @@ impl Linkbot {
         }
     }
 
+    /// Get a Linkbot's current joint angles.
+    ///
+    /// Returns: (j1: f64 , j2: f64, j3: f64, timestamp: u32)
+    pub fn get_joint_angles(&mut self) -> (f64, f64, f64, u32) {
+        let mut j1:f64 = 0.0;
+        let mut j2:f64 = 0.0;
+        let mut j3:f64 = 0.0;
+        let mut timestamp:i32 = 0;
+
+        unsafe {
+            linkbotGetJointAngles( self.inner.c_impl, 
+                                   &mut timestamp,
+                                   &mut j1,
+                                   &mut j2,
+                                   &mut j3 );
+        }
+        (j1, j2, j3, timestamp as u32)
+    }
+
     /// Move a Linkbot's motors. The mask specifies which motors to move. For instance, a mask
     /// value of 5 (0b101) indicates that motors 1 and 3 should be moved. A mask of 4 (0b100)
     /// indicates that only motor 3 should be moved.
@@ -224,6 +243,11 @@ extern {
     fn linkbotFromSerialId(serial_id: *const u8) -> *mut libc::c_void;
     fn linkbotGetFormFactor(linkbot_inner: *mut libc::c_void,
                             form: *mut libc::c_uint);
+    fn linkbotGetJointAngles(linkbot_inner: *mut libc::c_void,
+                             timestamp: *mut libc::c_int,
+                             j1: *mut libc::c_double,
+                             j2: *mut libc::c_double,
+                             j3: *mut libc::c_double);
     fn linkbotMove(linkbot_inner: *mut libc::c_void, 
                    mask: libc::c_uint,
                    j1: libc::c_double,
@@ -251,6 +275,8 @@ mod tests {
         l.set_button_handler( |button, state, timestamp| {
             println!("Button press!");
         });
+        let (j1, j2, j3, _) = l.get_joint_angles();
+        println!("Joint angles: {}, {}, {}", j1, j2, j3);
         l.move_motors(7, 90.0, 90.0, 90.0);
         l.move_wait(7);
         l.move_motors(7, -90.0, -90.0, -90.0);

@@ -43,13 +43,27 @@ pub struct Linkbot {
     inner: Box<Inner>
 }
 
+/// Linkbot button
+pub enum Button {
+    Power,
+    A,
+    B
+}
+
+pub enum ButtonState {
+    Up,
+    Down
+}
+
+pub type ButtonCallback = FnMut(Button, ButtonState, u32);
+
 #[repr(C)]
 #[doc(hidden)]
 pub struct Inner {
     c_impl: *mut libc::c_void,
     movewait_mask: (Mutex<u8>, Condvar),
-    motor_mask: u8
-    //_movewait_channel: Sender<i32, i32>,
+    motor_mask: u8,
+    button_callback: Option<Box<ButtonCallback>>
 }
 
 extern "C" fn linkbot_joint_event_callback(joint_no: i32, event: i32, _: i32, linkbot: *mut Inner)
@@ -66,6 +80,27 @@ extern "C" fn linkbot_joint_event_callback(joint_no: i32, event: i32, _: i32, li
     }
 }
 
+extern "C" fn linkbot_button_event_callback(button: i32, state: i32, timestamp: i32, linkbot: *mut Inner)
+{
+    unsafe {
+    match (*linkbot).button_callback {
+        None => { return; }
+        Some(ref mut callback) => {
+            let _button = match button {
+                0 => Button::Power,
+                1 => Button::A,
+                _ => Button::B
+            };
+            let _state = match state {
+                0 => ButtonState::Up,
+                _ => ButtonState::Down
+            };
+            callback(_button, _state, timestamp as u32);
+        }
+    } 
+    } // unsafe
+}
+
 impl Linkbot {
     /// Connect to a Linkbot. 
     pub fn new(serial_id: &str) -> Option<Linkbot> {
@@ -80,6 +115,7 @@ impl Linkbot {
                 let linkbot = Inner{c_impl: inner,
                                     movewait_mask: (Mutex::new(0), Condvar::new()),
                                     motor_mask: 0,
+                                    button_callback: None
                 };
                 let mut linkbot_boxed = Box::new(linkbot);
                 linkbotSetJointEventCallback(linkbot_boxed.c_impl, 
@@ -142,6 +178,19 @@ impl Linkbot {
             _mask = cond.wait(_mask).unwrap();
         }
     }
+
+    /// Set a callback for when a Linkbot button is pressed
+    pub fn set_button_handler<F>(&mut self, callback: F)
+        where F: FnMut(Button, ButtonState, u32) + 'static
+    {
+        self.inner.button_callback = Some(Box::new(callback));
+        unsafe {
+            linkbotSetButtonEventCallback(
+                self.inner.c_impl,
+                linkbot_button_event_callback,
+                &mut *self.inner);
+        }
+    }
 }
 
 #[link(name = "linkbot")]
@@ -162,6 +211,9 @@ extern {
     fn linkbotSetJointEventCallback(linkbot_inner: *mut libc::c_void,
                                     cb: extern fn(i32, i32, i32, *mut Inner),
                                     userdata: *mut Inner);
+    fn linkbotSetButtonEventCallback(linkbot_inner: *mut libc::c_void,
+                                     cb: extern fn(i32, i32, i32, *mut Inner),
+                                     userdata: *mut Inner);
 }
 
 #[cfg(test)]

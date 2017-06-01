@@ -1,6 +1,6 @@
 [package]
 name = "linkbot"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["David Ko <david@barobo.com>"]
 
 description = "Rust API for controlling Barobo Linkbots."

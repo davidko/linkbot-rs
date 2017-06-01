@@ -335,6 +335,7 @@ extern {
 #[cfg(test)]
 mod tests {
     use super::Linkbot;
+    use std;
     #[test]
     fn it_works() {
         let mut l = Linkbot::new("ZRG6").unwrap();
@@ -348,5 +349,8 @@ mod tests {
         l.move_motors(7, -90.0, -90.0, -90.0);
         l.move_wait(7);
         l.unset_button_handler();
+        l.set_buzzer_frequency(440.0);
+        std::thread::sleep( std::time::Duration::from_secs( 1 ) );
+        l.set_buzzer_frequency(0.0);
     }
 }

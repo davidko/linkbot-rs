@@ -154,20 +154,24 @@ impl Linkbot {
     ///
     /// Returns a tuple containing the three joint angles in degrees and a timestamp representing
     /// the number of milliseconds the robot has been powered on.
-    pub fn get_joint_angles(&mut self) -> (f64, f64, f64, u32) {
+    pub fn get_joint_angles(&mut self) -> Result<(f64, f64, f64, u32), i32> {
         let mut j1:f64 = 0.0;
         let mut j2:f64 = 0.0;
         let mut j3:f64 = 0.0;
         let mut timestamp:i32 = 0;
 
-        unsafe {
+        let rc = unsafe {
             linkbotGetJointAngles( self.inner.c_impl, 
                                    &mut timestamp,
                                    &mut j1,
                                    &mut j2,
-                                   &mut j3 );
+                                   &mut j3 )
+        };
+        if rc == 0 {
+            Ok((j1, j2, j3, timestamp as u32))
+        } else {
+            Err(rc)
         }
-        (j1, j2, j3, timestamp as u32)
     }
 
     /// Move a Linkbot's motors. The mask specifies which motors to move. For instance, a mask
@@ -175,28 +179,38 @@ impl Linkbot {
     /// indicates that only motor 3 should be moved.
     ///
     /// The units of movement are in degrees.
-    pub fn move_motors(&mut self, mask: u8, j1: f64, j2: f64, j3: f64) {
+    pub fn move_motors(&mut self, mask: u8, j1: f64, j2: f64, j3: f64) -> Result<(), i32> {
         let &ref lock = &(self.inner.movewait_mask.lock);
         {
             let mut _mask = lock.lock().unwrap();
             *_mask |= mask & self.inner.motor_mask;
         }
-        unsafe{
-            linkbotMove(self.inner.c_impl, mask as u32, j1, j2, j3);
+        let rc = unsafe{
+            linkbotMove(self.inner.c_impl, mask as u32, j1, j2, j3)
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(rc)
         }
     }
 
     /// Move a Linkbot's motors to absolute positions.
     ///
     /// See `move_motors` for a description of the mask argument.
-    pub fn move_motors_to(&mut self, mask: u8, j1: f64, j2: f64, j3: f64) {
+    pub fn move_motors_to(&mut self, mask: u8, j1: f64, j2: f64, j3: f64) -> Result<(), i32> {
         let &ref lock = &(self.inner.movewait_mask.lock);
         {
             let mut _mask = lock.lock().unwrap();
             *_mask |= mask & self.inner.motor_mask;
         }
-        unsafe{
-            linkbotMoveTo(self.inner.c_impl, mask as u32, j1, j2, j3);
+        let rc = unsafe{
+            linkbotMoveTo(self.inner.c_impl, mask as u32, j1, j2, j3)
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(rc)
         }
     }
 
@@ -206,13 +220,14 @@ impl Linkbot {
     /// stopped moving. The motors to wait for are specified by the mask argument. For instance, to
     /// wait for all motors, specify a mask of 0x07 (0b111). Or, to only wait for motor 3, specify
     /// a mask of 0x04 (0b100).
-    pub fn move_wait(&mut self, mask: u8) {
+    pub fn move_wait(&mut self, mask: u8) -> Result<(), i32> {
         let &ref lock = &(self.inner.movewait_mask.lock);
         let &ref cond = &(self.inner.movewait_mask.cond);
         let mut _mask = lock.lock().unwrap();
         while (mask & *_mask) != 0 {
             _mask = cond.wait(_mask).unwrap();
         }
+        Ok(())
     }
 
     /// Set a callback for when a Linkbot button is pressed
@@ -233,15 +248,20 @@ impl Linkbot {
     ///         // released.
     ///     });
     /// }
-    pub fn set_button_handler<F>(&mut self, callback: F)
+    pub fn set_button_handler<F>(&mut self, callback: F) -> Result<(), i32>
         where F: FnMut(Button, ButtonState, u32) + 'static
     {
         self.inner.button_callback = Some(Box::new(callback));
-        unsafe {
+        let rc = unsafe {
             linkbotSetButtonEventCallback(
                 self.inner.c_impl,
                 Some(linkbot_button_event_callback),
-                &mut *self.inner);
+                &mut *self.inner)
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(rc)
         }
     }
 
@@ -249,13 +269,35 @@ impl Linkbot {
     ///
     /// If there was a button handler previously set with `set_button_handler()`, this function
     /// removes it and restores the default Linkbot button functionality.
-    pub fn unset_button_handler(&mut self)
+    pub fn unset_button_handler(&mut self) -> Result<(), i32>
     {
-        unsafe {
+        let rc = unsafe {
             linkbotSetButtonEventCallback(
                 self.inner.c_impl,
                 None,
-                &mut *self.inner);
+                &mut *self.inner)
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(rc)
+        }
+    }
+
+    /// Set the buzzer frequency
+    ///
+    /// Set the buzzer frequency to a value specified in Hertz (Hz). Set the buzzer frequency to 0
+    /// to stop the buzzer.
+    pub fn set_buzzer_frequency(&mut self, frequency: f32) -> Result<(), i32> {
+        let rc = unsafe {
+            linkbotSetBuzzerFrequency(
+                self.inner.c_impl,
+                frequency)
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(rc)
         }
     }
 }
@@ -264,28 +306,30 @@ impl Linkbot {
 extern {
     fn linkbotFromSerialId(serial_id: *const u8) -> *mut libc::c_void;
     fn linkbotGetFormFactor(linkbot_inner: *mut libc::c_void,
-                            form: *mut libc::c_uint);
+                            form: *mut libc::c_uint) -> i32;
     fn linkbotGetJointAngles(linkbot_inner: *mut libc::c_void,
                              timestamp: *mut libc::c_int,
                              j1: *mut libc::c_double,
                              j2: *mut libc::c_double,
-                             j3: *mut libc::c_double);
+                             j3: *mut libc::c_double) -> i32;
     fn linkbotMove(linkbot_inner: *mut libc::c_void, 
                    mask: libc::c_uint,
                    j1: libc::c_double,
                    j2: libc::c_double,
-                   j3: libc::c_double) -> libc::c_int;
+                   j3: libc::c_double) -> i32;
     fn linkbotMoveTo(linkbot_inner: *mut libc::c_void, 
                    mask: libc::c_uint,
                    j1: libc::c_double,
                    j2: libc::c_double,
-                   j3: libc::c_double) -> libc::c_int;
+                   j3: libc::c_double) -> i32;
     fn linkbotSetJointEventCallback(linkbot_inner: *mut libc::c_void,
                                     cb: extern fn(i32, i32, i32, *mut Inner),
-                                    userdata: *mut Inner);
+                                    userdata: *mut Inner) -> i32;
     fn linkbotSetButtonEventCallback(linkbot_inner: *mut libc::c_void,
                                      cb: Option<extern fn(i32, i32, i32, *mut Inner)>,
-                                     userdata: *mut Inner);
+                                     userdata: *mut Inner) -> i32;
+    fn linkbotSetBuzzerFrequency(linkbot_inner: *mut libc::c_void,
+                                 frequency: libc::c_float) -> i32;
 }
 
 #[cfg(test)]
@@ -297,7 +341,7 @@ mod tests {
         l.set_button_handler( |button, state, timestamp| {
             println!("Button press!");
         });
-        let (j1, j2, j3, _) = l.get_joint_angles();
+        let (j1, j2, j3, _) = l.get_joint_angles().unwrap();
         println!("Joint angles: {}, {}, {}", j1, j2, j3);
         l.move_motors(7, 90.0, 90.0, 90.0);
         l.move_wait(7);

@@ -65,10 +65,16 @@ pub enum ButtonState {
 pub type ButtonCallback = FnMut(Button, ButtonState, u32);
 
 #[repr(C)]
+struct MoveWaitMask {
+    lock: Mutex<u8>,
+    cond: Condvar
+}
+
+#[repr(C)]
 #[doc(hidden)]
 pub struct Inner {
     c_impl: *mut libc::c_void,
-    movewait_mask: (Mutex<u8>, Condvar),
+    movewait_mask: MoveWaitMask,
     motor_mask: u8,
     button_callback: Option<Box<ButtonCallback>>
 }
@@ -76,14 +82,14 @@ pub struct Inner {
 extern "C" fn linkbot_joint_event_callback(joint_no: i32, event: i32, _: i32, linkbot: *mut Inner)
 {
     unsafe {
-        let &(ref lock, ref cond) = &((*linkbot).movewait_mask);
+        let &ref lock = &((*linkbot).movewait_mask.lock);
+        let &ref cond = &((*linkbot).movewait_mask.cond);
 
         let mut mask = lock.lock().unwrap();
         if (event == 0) || (event == 1) {
             *mask &= !(1<<joint_no);
             cond.notify_all();
         }
-        //let mask = (*linkbot).movewait_mask.lock().unwrap();
     }
 }
 
@@ -122,7 +128,7 @@ impl Linkbot {
             } else {
                 // Enable joint events
                 let linkbot = Inner{c_impl: inner,
-                                    movewait_mask: (Mutex::new(0), Condvar::new()),
+                                    movewait_mask: MoveWaitMask{lock: Mutex::new(0), cond: Condvar::new()},
                                     motor_mask: 0,
                                     button_callback: None
                 };
@@ -146,7 +152,8 @@ impl Linkbot {
 
     /// Get a Linkbot's current joint angles.
     ///
-    /// Returns: (j1: f64 , j2: f64, j3: f64, timestamp: u32)
+    /// Returns a tuple containing the three joint angles in degrees and a timestamp representing
+    /// the number of milliseconds the robot has been powered on.
     pub fn get_joint_angles(&mut self) -> (f64, f64, f64, u32) {
         let mut j1:f64 = 0.0;
         let mut j2:f64 = 0.0;
@@ -169,7 +176,7 @@ impl Linkbot {
     ///
     /// The units of movement are in degrees.
     pub fn move_motors(&mut self, mask: u8, j1: f64, j2: f64, j3: f64) {
-        let &(ref lock, _) = &(self.inner.movewait_mask);
+        let &ref lock = &(self.inner.movewait_mask.lock);
         {
             let mut _mask = lock.lock().unwrap();
             *_mask |= mask & self.inner.motor_mask;
@@ -183,7 +190,7 @@ impl Linkbot {
     ///
     /// See `move_motors` for a description of the mask argument.
     pub fn move_motors_to(&mut self, mask: u8, j1: f64, j2: f64, j3: f64) {
-        let &(ref lock, _) = &(self.inner.movewait_mask);
+        let &ref lock = &(self.inner.movewait_mask.lock);
         {
             let mut _mask = lock.lock().unwrap();
             *_mask |= mask & self.inner.motor_mask;
@@ -200,7 +207,8 @@ impl Linkbot {
     /// wait for all motors, specify a mask of 0x07 (0b111). Or, to only wait for motor 3, specify
     /// a mask of 0x04 (0b100).
     pub fn move_wait(&mut self, mask: u8) {
-        let &(ref lock, ref cond) = &(self.inner.movewait_mask);
+        let &ref lock = &(self.inner.movewait_mask.lock);
+        let &ref cond = &(self.inner.movewait_mask.cond);
         let mut _mask = lock.lock().unwrap();
         while (mask & *_mask) != 0 {
             _mask = cond.wait(_mask).unwrap();
@@ -232,7 +240,21 @@ impl Linkbot {
         unsafe {
             linkbotSetButtonEventCallback(
                 self.inner.c_impl,
-                linkbot_button_event_callback,
+                Some(linkbot_button_event_callback),
+                &mut *self.inner);
+        }
+    }
+
+    /// Remove the Linkbot button handler
+    ///
+    /// If there was a button handler previously set with `set_button_handler()`, this function
+    /// removes it and restores the default Linkbot button functionality.
+    pub fn unset_button_handler(&mut self)
+    {
+        unsafe {
+            linkbotSetButtonEventCallback(
+                self.inner.c_impl,
+                None,
                 &mut *self.inner);
         }
     }
@@ -262,7 +284,7 @@ extern {
                                     cb: extern fn(i32, i32, i32, *mut Inner),
                                     userdata: *mut Inner);
     fn linkbotSetButtonEventCallback(linkbot_inner: *mut libc::c_void,
-                                     cb: extern fn(i32, i32, i32, *mut Inner),
+                                     cb: Option<extern fn(i32, i32, i32, *mut Inner)>,
                                      userdata: *mut Inner);
 }
 
@@ -281,5 +303,6 @@ mod tests {
         l.move_wait(7);
         l.move_motors(7, -90.0, -90.0, -90.0);
         l.move_wait(7);
+        l.unset_button_handler();
     }
 }
